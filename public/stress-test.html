@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>压力检测 - 心晴实验室</title>
+    <meta name="description" content="基于 PSS-10 知觉压力量表的 10 题自评，评估过去一个月的知觉压力水平，附量表出处与计分说明。">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script>
+        // CDN 兜底：jsdelivr 加载失败时切换到 cdnjs
+        if (!window.Chart) {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script>');
+        }
+    </script>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/common.js"></script>
+    <style>
+        .option {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.85rem 1rem;
+            margin-bottom: 0.7rem;
+            border-radius: 0.85rem;
+            border: 2px solid var(--border);
+            background: var(--input-bg);
+            cursor: pointer;
+            transition: all 0.22s ease;
+        }
+        .option:hover { border-color: var(--brand-400); transform: translateX(4px); }
+        .option.selected {
+            border-color: var(--brand-600);
+            background: var(--bg-soft);
+            box-shadow: 0 4px 14px rgba(147, 51, 234, 0.15);
+        }
+        .option input[type="radio"] {
+            appearance: none;
+            width: 1.15rem; height: 1.15rem;
+            border-radius: 50%;
+            border: 2px solid var(--brand-400);
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        .option input[type="radio"]:checked {
+            background: var(--brand-600);
+            border-color: var(--brand-600);
+            box-shadow: inset 0 0 0 3px var(--input-bg);
+        }
+
+        /* 题目切换动画 */
+        .question { display: none; }
+        .question.active { display: block; animation: q-in 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+        .question.leaving-left { animation: q-out-left 0.25s ease; }
+        @keyframes q-in {
+            from { opacity: 0; transform: translateX(36px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes q-out-left {
+            from { opacity: 1; transform: translateX(0); }
+            to   { opacity: 0; transform: translateX(-36px); }
+        }
+
+        /* 进度条 */
+        .progress-track {
+            height: 0.6rem;
+            border-radius: 999px;
+            background: var(--bg-soft);
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, var(--brand-400), var(--brand-600));
+            transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        /* 结果页 */
+        #result { animation: q-in 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+        .gauge-wrap { position: relative; width: 220px; margin: 0 auto; }
+        .gauge-center {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .gauge-score { font-size: 2.6rem; font-weight: 800; color: var(--text-strong); line-height: 1; }
+        .gauge-label { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.3rem; }
+
+        /* 结果页：两个维度 */
+        .dim-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.85rem;
+            margin-bottom: 0.85rem;
+            text-align: left;
+        }
+        .dim-card {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.9rem;
+            padding: 0.95rem 1.1rem;
+        }
+        .dim-name { font-size: 0.85rem; color: var(--text-muted); }
+        .dim-value {
+            font-size: 1.35rem;
+            font-weight: 800;
+            color: var(--text-strong);
+            line-height: 1.3;
+            font-variant-numeric: tabular-nums;
+        }
+        .dim-sub { font-size: 0.75rem; color: var(--text-muted); }
+        .dim-note {
+            text-align: left;
+            background: var(--bg-soft);
+            border-left: 3px solid var(--brand-500);
+            border-radius: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: var(--text-muted);
+            font-size: 0.86rem;
+            line-height: 1.8;
+            margin: 0 0 1.25rem;
+        }
+
+        /* 量表依据 */
+        .scale-meta { display: flex; flex-direction: column; gap: 0.9rem; }
+        .scale-row {
+            display: grid;
+            grid-template-columns: 5.5rem 1fr;
+            gap: 0.9rem;
+            padding-bottom: 0.9rem;
+            border-bottom: 1px dashed var(--border);
+        }
+        .scale-row:last-child { border-bottom: none; padding-bottom: 0; }
+        @media (max-width: 560px) {
+            .scale-row { grid-template-columns: 1fr; gap: 0.25rem; }
+        }
+        .scale-key {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--brand-600);
+        }
+        .scale-val {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            line-height: 1.85;
+        }
+        .scale-link {
+            color: var(--brand-600);
+            font-weight: 600;
+            text-decoration: none;
+            border-bottom: 1px dashed currentColor;
+            white-space: nowrap;
+        }
+        .scale-link:hover { border-bottom-style: solid; }
+        .scale-warn {
+            display: block;
+            margin-top: 0.4rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.6rem;
+            background: rgba(245, 158, 11, 0.12);
+            color: var(--text-muted);
+            font-size: 0.83rem;
+            line-height: 1.75;
+        }
+        .scale-disclaimer {
+            margin: 1.25rem 0 0;
+            padding: 0.85rem 1rem;
+            border-radius: 0.75rem;
+            background: var(--bg-soft);
+            color: var(--text-muted);
+            font-size: 0.83rem;
+            line-height: 1.85;
+        }
+
+        kbd {
+            padding: 0.1rem 0.45rem;
+            border: 1px solid var(--border);
+            border-bottom-width: 2px;
+            border-radius: 0.35rem;
+            background: var(--input-bg);
+            font-size: 0.78rem;
+            font-family: inherit;
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="index.html" class="nav-logo"><span class="logo-dot">☀️</span>心晴实验室</a>
+            <button class="nav-burger" onclick="toggleNav()" aria-label="菜单">☰</button>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">首页</a>
+                <a href="stress-test.html" class="nav-link active">压力检测</a>
+                <a href="relax.html" class="nav-link">解压方法</a>
+                <a href="resources.html" class="nav-link">心情树洞</a>
+                <button class="theme-toggle" onclick="toggleTheme()" title="切换主题">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container-page container-narrow">
+        <div class="card page-hero">
+            <h1 class="card-title">🧭 知觉压力水平测试（PSS-10）</h1>
+            <p class="card-sub">
+                本页使用 <strong>PSS-10 知觉压力量表</strong>（Cohen 等，1983）。请根据<strong>过去一个月</strong>的实际感受作答，
+                共 10 题，无对错之分。支持 <kbd>1</kbd>–<kbd>5</kbd> 快速选择，<kbd>Enter</kbd> 下一题。
+            </p>
+
+            <div class="flex items-center gap-4 mb-6">
+                <div class="progress-track w-full"><div id="progress-bar" class="progress-fill" style="width: 0%"></div></div>
+                <span id="progress-text" class="muted" style="white-space: nowrap; font-size: 0.85rem;">1 / 10</span>
+            </div>
+
+            <!-- 题目容器（由 JS 渲染） -->
+            <div id="questions"></div>
+
+            <!-- 结果页 -->
+            <div id="result" class="hidden text-center">
+                <div class="gauge-wrap">
+                    <canvas id="gaugeChart" width="220" height="220"></canvas>
+                    <div class="gauge-center">
+                        <div class="gauge-score" id="gauge-score">0</div>
+                        <div class="gauge-label">PSS-10 总分 / 40</div>
+                    </div>
+                </div>
+                <h2 class="card-title mt-6" id="result-title"></h2>
+                <p class="muted mb-6" id="result-desc" style="line-height: 1.8;"></p>
+
+                <!-- 两个维度得分 -->
+                <div class="dim-grid">
+                    <div class="dim-card">
+                        <div class="dim-name">无助感</div>
+                        <div class="dim-value" id="dim-helpless">0 / 24</div>
+                        <div class="dim-sub">第 1、2、3、6、9、10 题</div>
+                    </div>
+                    <div class="dim-card">
+                        <div class="dim-name">自我效能感</div>
+                        <div class="dim-value" id="dim-efficacy">0 / 16</div>
+                        <div class="dim-sub">第 4、5、7、8 题（反向计分）</div>
+                    </div>
+                </div>
+                <p class="dim-note" id="dim-note"></p>
+
+                <div class="text-center" style="text-align: left; background: var(--bg-soft); border-radius: 1rem; padding: 1.25rem;">
+                    <h3 style="font-weight: 700; color: var(--text-strong); margin: 0 0 0.6rem;">💡 针对性建议</h3>
+                    <ul id="suggest-list" class="muted" style="line-height: 2; padding-left: 1.2rem; margin: 0;"></ul>
+                </div>
+                <div class="flex justify-center gap-4 mt-6" style="flex-wrap: wrap;">
+                    <button id="restart-btn" class="btn btn-ghost">🔄 重新测试</button>
+                    <a href="relax.html" class="btn btn-primary">🧘 去放松一下</a>
+                </div>
+
+                <!-- 历史趋势 -->
+                <div id="history-section" class="mt-8 hidden" style="text-align: left;">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 style="font-weight: 700; color: var(--text-strong); margin: 0;">📈 我的测评趋势</h3>
+                        <button id="clear-history" class="btn btn-danger" style="padding: 0.35rem 0.9rem; font-size: 0.82rem;">清空记录</button>
+                    </div>
+                    <div style="position: relative; height: 220px;"><canvas id="historyChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- 按钮组 -->
+            <div id="nav-btns" class="flex justify-between mt-8">
+                <button id="prev-btn" class="btn btn-ghost hidden">← 上一题</button>
+                <button id="next-btn" class="btn btn-primary">下一题 →</button>
+                <button id="submit-btn" class="btn btn-primary hidden">✔ 提交测试</button>
+            </div>
+        </div>
+
+        <!-- 量表依据 -->
+        <section class="card mt-8" style="margin-top: 1.5rem;">
+            <h2 class="card-title" style="font-size: 1.2rem;">📚 本测评的依据</h2>
+            <p class="card-sub" style="margin-bottom: 1.25rem;">
+                本页不是自编题目，而是直接采用心理学界通用的 PSS-10 知觉压力量表，题目、计分方式与分级标准均按原量表执行。
+            </p>
+
+            <div class="scale-meta">
+                <div class="scale-row">
+                    <span class="scale-key">量表</span>
+                    <span class="scale-val">PSS-10 知觉压力量表（Perceived Stress Scale, 10-item version）</span>
+                </div>
+                <div class="scale-row">
+                    <span class="scale-key">出处</span>
+                    <span class="scale-val">
+                        Cohen, S., Kamarck, T., &amp; Mermelstein, R. (1983). A global measure of perceived stress.
+                        <em>Journal of Health and Social Behavior</em>, 24(4), 385–396.
+                        <a class="scale-link" href="https://doi.org/10.2307/2136404" target="_blank" rel="noopener">DOI: 10.2307/2136404 ↗</a>
+                    </span>
+                </div>
+                <div class="scale-row">
+                    <span class="scale-key">测量内容</span>
+                    <span class="scale-val">过去一个月内，个体感到生活<strong>不可预测、不可控、超出负荷</strong>的程度。它测量的是主观知觉压力，而非某个具体事件。</span>
+                </div>
+                <div class="scale-row">
+                    <span class="scale-key">计分</span>
+                    <span class="scale-val">
+                        10 题，五级计分（从不 0 分 … 总是 4 分），总分 0–40 分，分数越高表示知觉压力越大。<br>
+                        其中第 <strong>4、5、7、8 题</strong>为反向计分题，转换后得分 = 4 − 原始得分（这四题描述的是「掌控感」，答得越频繁分数越低）。
+                    </span>
+                </div>
+                <div class="scale-row">
+                    <span class="scale-key">分级</span>
+                    <span class="scale-val">
+                        0–13 分 低压力 · 14–26 分 中等压力 · 27–40 分 高压力。
+                        <span class="scale-warn">⚠️ 该分级是文献与临床中常用的参考范围，原作者 Cohen 并未发布官方诊断截断值，因此它只能用于自我了解，不能作为诊断标准。</span>
+                    </span>
+                </div>
+                <div class="scale-row">
+                    <span class="scale-key">两个维度</span>
+                    <span class="scale-val">
+                        研究常把 PSS-10 分为「无助感」（第 1、2、3、6、9、10 题）与「自我效能感」（第 4、5、7、8 题）两个维度，
+                        结果页会分别给出得分，帮助你判断压力主要来自「事情失控」还是「信心不足」。
+                    </span>
+                </div>
+            </div>
+
+            <p class="scale-disclaimer">
+                ⚠️ 重要说明：PSS-10 是<strong>筛查与自我了解工具，不是诊断工具</strong>。本页结果不能替代专业评估，
+                也不代表任何临床结论。如果你的得分处于高压力区间，或持续感到困扰、影响到睡眠与日常功能，
+                请前往「心情树洞」页查看校内外免费求助渠道，必要时预约专业心理咨询。
+            </p>
+        </section>
+    </main>
+
+    <footer class="footer">© 2025 心晴实验室 · 大学生心理健康项目 | AIDM7450 课程项目</footer>
+
+    <script src="js/stress-test.js"></script>
+</body>
+</html>

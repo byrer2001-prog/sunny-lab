@@ -1,0 +1,20 @@
+{
+  "name": "sunny-lab",
+  "version": "1.0.0",
+  "description": "心晴实验室 —— 大学生心理健康自助平台：数据可视化、压力测评、呼吸训练、心情日记",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "mental-health",
+    "express",
+    "chartjs",
+    "wellness"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
